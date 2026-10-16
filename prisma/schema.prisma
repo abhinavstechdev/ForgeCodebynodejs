@@ -1,0 +1,215 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  passwordHash  String
+  name          String?
+  role          String          @default("user")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  projects      Project[]
+  memberships   ProjectMember[]
+  mcpTokens     McpToken[]
+  aiSettings    UserAiSetting?
+}
+
+model Project {
+  id            String           @id @default(uuid())
+  ownerId       String
+  name          String
+  slug          String
+  description   String?
+  storageDriver String           @default("postgres") // "postgres" | "s3" | "local"
+  storagePrefix String
+  rootDirectory String           @default("/")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  owner         User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members       ProjectMember[]
+  files         ProjectFile[]
+  proposals     EditProposal[]
+  conversations AiConversation[]
+  mcpTokens     McpToken[]
+  executionJobs ExecutionJob[]
+
+  @@unique([ownerId, slug])
+  @@index([ownerId])
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   @default("editor") // "viewer" | "editor" | "admin"
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model ProjectFile {
+  id          String         @id @default(uuid())
+  projectId   String
+  path        String         // Relative path e.g. "src/index.ts"
+  isFolder    Boolean        @default(false)
+  version     Int            @default(1)
+  sha256      String
+  sizeBytes   Int            @default(0)
+  mimeType    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots   FileSnapshot[]
+
+  @@unique([projectId, path])
+  @@index([projectId, path])
+}
+
+model FileContent {
+  id          String   @id @default(uuid())
+  projectId   String
+  filePath    String
+  sha256      String
+  content     String   // Text content or Base64 encoded binary
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, filePath])
+}
+
+model FileSnapshot {
+  id          String      @id @default(uuid())
+  fileId      String
+  version     Int
+  sha256      String
+  content     String
+  reason      String      // "pre_patch" | "user_save" | "auto_save"
+  createdAt   DateTime    @default(now())
+
+  file        ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, version])
+}
+
+model EditProposal {
+  id            String             @id @default(uuid())
+  projectId     String
+  filePath      String
+  baseVersion   Int
+  baseSha256    String
+  explanation   String
+  status        String             @default("pending") // "pending" | "applied" | "rejected" | "conflicted"
+  createdAt     DateTime           @default(now())
+  appliedAt     DateTime?
+
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hunks         EditProposalHunk[]
+
+  @@index([projectId, status])
+}
+
+model EditProposalHunk {
+  id            String       @id @default(uuid())
+  proposalId    String
+  hunkIndex     Int
+  oldStartLine  Int
+  oldLineCount  Int
+  newStartLine  Int
+  newLineCount  Int
+  oldContent    String
+  newContent    String
+  status        String       @default("pending") // "pending" | "accepted" | "rejected"
+
+  proposal      EditProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, hunkIndex])
+}
+
+model McpToken {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  name        String
+  userId      String
+  projectId   String?
+  scopes      String[]  // ["files:read", "files:write", "patch:propose", etc.]
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+}
+
+model McpAuditLog {
+  id         String   @id @default(uuid())
+  tokenId    String
+  toolName   String
+  parameters Json?
+  statusCode Int
+  durationMs Int
+  createdAt  DateTime @default(now())
+
+  @@index([tokenId, createdAt])
+}
+
+model AiConversation {
+  id        String      @id @default(uuid())
+  projectId String
+  title     String      @default("New Chat")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+}
+
+model AiMessage {
+  id              String         @id @default(uuid())
+  conversationId  String
+  role            String         // "user" | "assistant" | "system"
+  content         String
+  filesReferenced String[]
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+
+  conversation    AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model UserAiSetting {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  defaultProvider String  @default("openai")
+  encryptedKeys   Json    // Encrypted API keys per provider
+  defaultModel    String  @default("gpt-4o")
+
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ExecutionJob {
+  id         String    @id @default(uuid())
+  projectId  String
+  command    String
+  status     String    @default("queued") // "queued" | "running" | "completed" | "failed" | "cancelled"
+  exitCode   Int?
+  output     String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+}

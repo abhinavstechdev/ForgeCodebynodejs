@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #18181b;
+  color: #d4d4d8;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Custom developer scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Resizable divider handles */
+[data-panel-resize-handle-enabled] {
+  background-color: #27272a;
+  transition: background-color 0.15s ease;
+}
+
+[data-panel-resize-handle-enabled]:hover,
+[data-panel-resize-handle-enabled][data-resize-handle-active] {
+  background-color: #3b82f6 !important;
+}
+
+/* Terminal xterm container styling */
+.xterm-viewport {
+  background-color: #121214 !important;
+}
+
+.xterm {
+  padding: 8px;
+}
