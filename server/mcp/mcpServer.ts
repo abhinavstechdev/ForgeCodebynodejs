@@ -328,19 +328,57 @@ function getBaseUrl(req: Request): string {
   return `${protocol}://${host}`;
 }
 
+export async function getAnonymousMcpContext(): Promise<McpContext> {
+  const defaultUser = await prisma.user.findFirst({
+    include: {
+      projects: {
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return {
+    userId: defaultUser?.id || 'anonymous-user',
+    tokenId: 'anonymous-session',
+    scopes: ['*'],
+    defaultProjectId: defaultUser?.projects[0]?.id || null,
+  };
+}
+
 /**
  * Express Route Handlers for MCP SSE Transport
  */
 export async function handleMcpSse(req: Request, res: Response) {
-  const ctx = await authenticateMcpRequest(req);
-  if (!ctx) {
+  let ctx = await authenticateMcpRequest(req);
+
+  // If an invalid bearer token was supplied
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ') && !ctx) {
     const baseUrl = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
       `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
     );
-    res.status(401).json({ error: 'Unauthorized: Invalid or missing MCP bearer token' });
+    res.status(401).json({ error: 'Unauthorized: Invalid or expired MCP bearer token' });
     return;
+  }
+
+  // If client explicitly requests auth challenge
+  if (!ctx && (req.query.auth === 'required' || req.headers['x-mcp-require-auth'] === 'true')) {
+    const baseUrl = getBaseUrl(req);
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+    );
+    res.status(401).json({ error: 'Unauthorized: MCP bearer token required' });
+    return;
+  }
+
+  // If no auth provided, connect seamlessly in No-Auth (Anonymous/Public) Mode
+  if (!ctx) {
+    ctx = await getAnonymousMcpContext();
   }
 
   const transport = new SSEServerTransport('/mcp/messages', res);

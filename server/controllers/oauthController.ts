@@ -85,7 +85,9 @@ export class OAuthController {
       authorization_endpoint: `${baseUrl}/oauth/authorize`,
       token_endpoint: `${baseUrl}/oauth/token`,
       userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+      registration_endpoint: `${baseUrl}/oauth/register`,
       jwks_uri: `${baseUrl}/oauth/jwks.json`,
+      client_id_metadata_document_supported: true,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code'],
       token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
@@ -102,6 +104,32 @@ export class OAuthController {
         'ai:propose',
         'ai:apply',
       ],
+    });
+  }
+
+  // -------------------------------------------------------------
+  // 3b. RFC 7591 Dynamic Client Registration (/oauth/register)
+  // -------------------------------------------------------------
+  static registerClient(req: Request, res: Response): void {
+    const {
+      client_name = 'ChatGPT Client',
+      redirect_uris = ['https://chatgpt.com/connector_platform_oauth_redirect'],
+      grant_types = ['authorization_code'],
+      response_types = ['code'],
+      token_endpoint_auth_method = 'none',
+    } = req.body || {};
+
+    const clientId = `forgecode_client_${crypto.randomBytes(12).toString('hex')}`;
+    const issuedAt = Math.floor(Date.now() / 1000);
+
+    res.status(201).json({
+      client_id: clientId,
+      client_id_issued_at: issuedAt,
+      client_name,
+      redirect_uris: Array.isArray(redirect_uris) ? redirect_uris : [redirect_uris],
+      grant_types,
+      response_types,
+      token_endpoint_auth_method,
     });
   }
 
@@ -403,11 +431,12 @@ export class OAuthController {
     // Generate cryptographic authorization code
     const code = crypto.randomBytes(32).toString('hex');
     const scopes = scope ? scope.split(' ') : ['files:read', 'files:write'];
+    const effectiveClientId = client_id || 'forgecode-ai-client';
 
     authCodeStore.set(code, {
       code,
       userId: targetUserId,
-      clientId: client_id || '',
+      clientId: effectiveClientId,
       redirectUri: redirect_uri,
       codeChallenge: code_challenge || '',
       codeChallengeMethod: code_challenge_method,

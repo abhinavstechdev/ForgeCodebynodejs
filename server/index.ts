@@ -62,6 +62,7 @@ app.get('/.well-known/openid-configuration', OAuthController.getAuthorizationSer
 
 app.get('/oauth/authorize', OAuthController.renderAuthorizePage);
 app.post('/oauth/authorize', OAuthController.handleAuthorizeSubmit);
+app.post('/oauth/register', OAuthController.registerClient);
 app.post('/oauth/token', OAuthController.exchangeToken);
 app.get('/oauth/userinfo', OAuthController.getUserInfo);
 app.get('/oauth/jwks.json', OAuthController.getJwks);

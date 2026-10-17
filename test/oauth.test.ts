@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import crypto from 'crypto';
+import http from 'http';
 import app from '../server/index.js';
 
 describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
@@ -20,19 +21,35 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     expect(res.body.scopes_supported).toContain('files:write');
   });
 
-  it('GET /.well-known/oauth-authorization-server returns RFC 8414 metadata with PKCE & ISS', async () => {
+  it('GET /.well-known/oauth-authorization-server returns RFC 8414 metadata with DCR, CIMD, PKCE & ISS', async () => {
     const res = await request(app).get('/.well-known/oauth-authorization-server');
     expect(res.status).toBe(200);
     expect(res.body.authorization_endpoint).toContain('/oauth/authorize');
     expect(res.body.token_endpoint).toContain('/oauth/token');
+    expect(res.body.registration_endpoint).toContain('/oauth/register');
+    expect(res.body.client_id_metadata_document_supported).toBe(true);
     expect(res.body.authorization_response_iss_parameter_supported).toBe(true);
     expect(res.body.code_challenge_methods_supported).toContain('S256');
     expect(res.body.scopes_supported).toContain('openid');
     expect(res.body.scopes_supported).toContain('email');
   });
 
-  it('GET /mcp without bearer token returns 401 with WWW-Authenticate resource_metadata challenge', async () => {
-    const res = await request(app).get('/mcp');
+  it('POST /oauth/register supports RFC 7591 Dynamic Client Registration', async () => {
+    const res = await request(app)
+      .post('/oauth/register')
+      .send({
+        client_name: 'ChatGPT Custom MCP Client',
+        redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.client_id).toMatch(/^forgecode_client_/);
+    expect(res.body.client_name).toBe('ChatGPT Custom MCP Client');
+    expect(res.body.token_endpoint_auth_method).toBe('none');
+  });
+
+  it('GET /mcp?auth=required returns 401 with WWW-Authenticate resource_metadata challenge', async () => {
+    const res = await request(app).get('/mcp?auth=required');
     expect(res.status).toBe(401);
     const authHeader = res.headers['www-authenticate'];
     expect(authHeader).toBeDefined();
@@ -40,11 +57,29 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     expect(authHeader).toContain('/.well-known/oauth-protected-resource"');
   });
 
-  it('GET /oauth/authorize renders interactive consent UI', async () => {
+  it('GET /mcp without bearer token connects anonymously in No-Auth mode', async () => {
+    const testServer = http.createServer(app);
+    await new Promise<void>((resolve) => testServer.listen(0, resolve));
+    const port = (testServer.address() as any).port;
+
+    await new Promise<void>((resolve) => {
+      const clientReq = http.get(`http://127.0.0.1:${port}/mcp`, (res: http.IncomingMessage) => {
+        expect(res.statusCode).toBe(200);
+        expect(res.headers['content-type']).toContain('text/event-stream');
+        clientReq.destroy();
+        testServer.close(() => resolve());
+      });
+      clientReq.on('error', () => {
+        testServer.close(() => resolve());
+      });
+    });
+  });
+
+  it('GET /oauth/authorize renders interactive consent UI with default forgecode-ai-client', async () => {
     const res = await request(app)
       .get('/oauth/authorize')
       .query({
-        client_id: 'chatgpt-test-client',
+        client_id: 'forgecode-ai-client',
         redirect_uri: 'https://chatgpt.com/connector_platform_oauth_redirect',
         response_type: 'code',
         state: 'xyz123',
@@ -56,7 +91,7 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.text).toContain('ForgeCode AI');
-    expect(res.text).toContain('chatgpt-test-client');
+    expect(res.text).toContain('forgecode-ai-client');
     expect(res.text).toContain('Authorize Access');
   });
 
@@ -75,7 +110,7 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     const authRes = await request(app)
       .post('/oauth/authorize')
       .send({
-        client_id: 'chatgpt-client',
+        client_id: 'forgecode-ai-client',
         redirect_uri: redirectUri,
         state,
         code_challenge: codeChallenge,
@@ -101,7 +136,7 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
         grant_type: 'authorization_code',
         code,
         redirect_uri: redirectUri,
-        client_id: 'chatgpt-client',
+        client_id: 'forgecode-ai-client',
         code_verifier: codeVerifier,
       });
 
