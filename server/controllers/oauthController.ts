@@ -65,6 +65,8 @@ export class OAuthController {
         'files:read',
         'files:write',
         'terminal:execute',
+        'git:read',
+        'git:write',
         'git:commit',
         'ai:propose',
         'ai:apply',
@@ -100,6 +102,8 @@ export class OAuthController {
         'files:read',
         'files:write',
         'terminal:execute',
+        'git:read',
+        'git:write',
         'git:commit',
         'ai:propose',
         'ai:apply',
@@ -430,7 +434,7 @@ export class OAuthController {
 
     // Generate cryptographic authorization code
     const code = crypto.randomBytes(32).toString('hex');
-    const scopes = scope ? scope.split(' ') : ['files:read', 'files:write'];
+    const scopes = scope ? scope.split(' ') : ['files:read', 'files:write', 'git:read', 'git:write'];
     const effectiveClientId = client_id || 'forgecode-ai-client';
 
     authCodeStore.set(code, {

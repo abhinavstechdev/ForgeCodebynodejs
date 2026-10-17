@@ -1,15 +1,26 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { GitService } from '../services/gitService.js';
+import { GitError } from '../utils/gitError.js';
 
 export class GitController {
+  private static handleError(res: Response, err: any, defaultMessage: string) {
+    const statusCode = err instanceof GitError && err.code === 'GIT_PERMISSION_DENIED' ? 403 : 500;
+    res.status(statusCode).json({
+      error: defaultMessage,
+      message: err.message,
+      errorCode: err.code || 'GIT_OPERATION_FAILED',
+      details: err.details,
+    });
+  }
+
   static async getStatus(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { projectId } = req.params;
       const status = await GitService.getStatus(projectId);
       res.json(status);
     } catch (err: any) {
-      res.status(500).json({ error: 'Git status failed', details: err.message });
+      GitController.handleError(res, err, 'Git status failed');
     }
   }
 
@@ -17,10 +28,20 @@ export class GitController {
     try {
       const { projectId } = req.params;
       const staged = req.query.staged === 'true';
-      const diff = await GitService.getDiff(projectId, staged);
-      res.json({ diff });
+      const baseCommit = req.query.baseCommit as string | undefined;
+      const headCommit = req.query.headCommit as string | undefined;
+      const filePath = req.query.filePath as string | undefined;
+      const maxLines = req.query.maxLines ? parseInt(req.query.maxLines as string, 10) : undefined;
+      const result = await GitService.getDiff(projectId, {
+        staged,
+        fromRevision: baseCommit,
+        toRevision: headCommit,
+        filePath,
+        maxLines,
+      });
+      res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: 'Git diff failed', details: err.message });
+      GitController.handleError(res, err, 'Git diff failed');
     }
   }
 
@@ -37,7 +58,7 @@ export class GitController {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: 'Git staging failed', details: err.message });
+      GitController.handleError(res, err, 'Git staging failed');
     }
   }
 
@@ -53,7 +74,7 @@ export class GitController {
       await GitService.unstageFile(projectId, filePath);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: 'Git unstage failed', details: err.message });
+      GitController.handleError(res, err, 'Git unstage failed');
     }
   }
 
@@ -76,7 +97,7 @@ export class GitController {
 
       res.json({ success: true, ...result });
     } catch (err: any) {
-      res.status(500).json({ error: 'Git commit failed', details: err.message });
+      GitController.handleError(res, err, 'Git commit failed');
     }
   }
 
@@ -84,10 +105,20 @@ export class GitController {
     try {
       const { projectId } = req.params;
       const maxCount = req.query.maxCount ? parseInt(req.query.maxCount as string, 10) : 25;
-      const history = await GitService.getHistory(projectId, maxCount);
+      const branch = req.query.branch as string | undefined;
+      const base = req.query.base as string | undefined;
+      const head = req.query.head as string | undefined;
+      const filePath = req.query.filePath as string | undefined;
+      const history = await GitService.getHistory(projectId, {
+        maxCount,
+        branch,
+        fromRevision: base,
+        toRevision: head,
+        filePath,
+      });
       res.json({ history });
     } catch (err: any) {
-      res.status(500).json({ error: 'Git history failed', details: err.message });
+      GitController.handleError(res, err, 'Git history failed');
     }
   }
 
@@ -109,7 +140,125 @@ export class GitController {
 
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: 'Git push failed', details: err.message });
+      GitController.handleError(res, err, 'Git push failed');
+    }
+  }
+
+  static async sync(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { remoteName, branch, strategy, push, commitMessage, force, dryRun, token } = req.body;
+      const result = await GitService.sync(projectId, {
+        remoteName,
+        branch,
+        strategy,
+        push,
+        commitMessage,
+        force,
+        dryRun,
+        token,
+      });
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Git sync failed');
+    }
+  }
+
+  static async fetch(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { remoteName, branch, token } = req.body;
+      const result = await GitService.fetch(projectId, { remoteName, branch, token });
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Git fetch failed');
+    }
+  }
+
+  static async pull(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { remoteName, branch, token, strategy } = req.body;
+      const result = await GitService.pull(projectId, {
+        remoteName,
+        branch,
+        token,
+        strategy,
+      });
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Git pull failed');
+    }
+  }
+
+  static async clone(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { repositoryUrl, branch, depth, token } = req.body;
+      const result = await GitService.clone({
+        projectId,
+        repositoryUrl,
+        branch,
+        depth,
+        token,
+      });
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Git clone failed');
+    }
+  }
+
+  static async branchList(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const summary = await GitService.branchList(projectId);
+      res.json(summary);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Branch list failed');
+    }
+  }
+
+  static async branchCreate(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { branchName, startPoint, checkout } = req.body;
+      const result = await GitService.branchCreate(projectId, branchName, startPoint, checkout);
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Branch create failed');
+    }
+  }
+
+  static async branchSwitch(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { branchName } = req.body;
+      const result = await GitService.branchSwitch(projectId, branchName);
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Branch switch failed');
+    }
+  }
+
+  static async branchDelete(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { branchName, force } = req.body;
+      const result = await GitService.branchDelete(projectId, branchName, force);
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Branch delete failed');
+    }
+  }
+
+  static async setUpstream(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { branch, remote, upstreamBranch } = req.body;
+      const result = await GitService.setUpstream(projectId, branch, remote, upstreamBranch);
+      res.json(result);
+    } catch (err: any) {
+      GitController.handleError(res, err, 'Set upstream failed');
     }
   }
 
@@ -119,7 +268,7 @@ export class GitController {
       const remotes = await GitService.getRemotes(projectId);
       res.json({ remotes });
     } catch (err: any) {
-      res.status(500).json({ error: 'Failed to retrieve remotes', details: err.message });
+      GitController.handleError(res, err, 'Failed to retrieve remotes');
     }
   }
 
@@ -134,7 +283,7 @@ export class GitController {
       await GitService.setRemote(projectId, url, name || 'origin');
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: 'Failed to set remote', details: err.message });
+      GitController.handleError(res, err, 'Failed to set remote');
     }
   }
 }

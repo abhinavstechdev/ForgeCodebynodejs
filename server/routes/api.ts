@@ -71,6 +71,15 @@ router.post('/projects/:projectId/git/stage', requireAuth, requireProjectAccess(
 router.post('/projects/:projectId/git/unstage', requireAuth, requireProjectAccess('editor'), GitController.unstage);
 router.post('/projects/:projectId/git/commit', requireAuth, requireProjectAccess('editor'), GitController.commit);
 router.post('/projects/:projectId/git/push', requireAuth, requireProjectAccess('editor'), GitController.push);
+router.post('/projects/:projectId/git/sync', requireAuth, requireProjectAccess('editor'), GitController.sync);
+router.post('/projects/:projectId/git/fetch', requireAuth, requireProjectAccess('editor'), GitController.fetch);
+router.post('/projects/:projectId/git/pull', requireAuth, requireProjectAccess('editor'), GitController.pull);
+router.post('/projects/:projectId/git/clone', requireAuth, requireProjectAccess('editor'), GitController.clone);
+router.get('/projects/:projectId/git/branches', requireAuth, requireProjectAccess('viewer'), GitController.branchList);
+router.post('/projects/:projectId/git/branches', requireAuth, requireProjectAccess('editor'), GitController.branchCreate);
+router.post('/projects/:projectId/git/branches/switch', requireAuth, requireProjectAccess('editor'), GitController.branchSwitch);
+router.delete('/projects/:projectId/git/branches/:branchName', requireAuth, requireProjectAccess('editor'), GitController.branchDelete);
+router.post('/projects/:projectId/git/upstream', requireAuth, requireProjectAccess('editor'), GitController.setUpstream);
 router.get('/projects/:projectId/git/remotes', requireAuth, requireProjectAccess('viewer'), GitController.getRemotes);
 router.post('/projects/:projectId/git/remotes', requireAuth, requireProjectAccess('editor'), GitController.setRemote);
 router.get('/projects/:projectId/git/history', requireAuth, requireProjectAccess('viewer'), GitController.getHistory);

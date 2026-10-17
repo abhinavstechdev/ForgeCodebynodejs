@@ -46,9 +46,16 @@ export function createConfiguredMcpServer(ctx: McpContext): McpServer {
             durationMs: Date.now() - startTime,
           },
         }).catch(() => {});
+        const errorPayload = {
+          success: false,
+          isError: true,
+          errorCode: err.code || (err.name === 'Error' && err.message.includes('Permission denied') ? 'AUTH_SCOPE_MISSING' : 'GIT_OPERATION_FAILED'),
+          message: err.message,
+          details: err.details,
+        };
         return {
           isError: true,
-          content: [{ type: 'text' as const, text: `Error executing ${toolName}: ${err.message}` }],
+          content: [{ type: 'text' as const, text: JSON.stringify(errorPayload, null, 2) }],
         };
       }
     };
@@ -224,29 +231,38 @@ export function createConfiguredMcpServer(ctx: McpContext): McpServer {
     wrapHandler('undo_change', args => McpToolsHandler.undoChange(ctx, args))
   );
 
-  // 5. Version Control
+  // 5. Version Control & GitHub Integration
   server.tool(
     'git_status',
-    'Returns current branch, staged, unstaged, and untracked files',
-    { projectId: z.string().optional() },
+    'Returns full structured repository status: current branch, commit hash, upstream, ahead/behind counts, staged, unstaged, untracked, deleted, conflicted files, and in-progress operations.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+    },
     wrapHandler('git_status', args => McpToolsHandler.gitStatus(ctx, args))
   );
 
   server.tool(
     'git_diff',
-    'Returns git diff of working directory or staged modifications',
-    { projectId: z.string().optional(), staged: z.boolean().optional() },
+    'Returns git diff of working directory or staged modifications with statistics, line truncation limits, and secret scrubbing.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      staged: z.boolean().optional().describe('Diff staged changes against HEAD instead of working directory changes'),
+      fromRevision: z.string().optional().describe('Base commit SHA or branch reference'),
+      toRevision: z.string().optional().describe('Target commit SHA or branch reference'),
+      filePath: z.string().optional().describe('Optional specific file path to limit diff'),
+      maxLines: z.number().int().min(1).optional().describe('Maximum lines of diff output to return before truncation (default 1000)'),
+    },
     wrapHandler('git_diff', args => McpToolsHandler.gitDiff(ctx, args))
   );
 
   server.tool(
     'git_commit',
-    'Creates a git commit with specified message',
+    'Creates a git commit with specified message, rejecting empty commits unless files were staged or auto-staged.',
     {
-      projectId: z.string().optional(),
-      message: z.string(),
-      authorName: z.string().optional(),
-      authorEmail: z.string().optional(),
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      message: z.string().describe('Commit message explaining changes'),
+      authorName: z.string().optional().describe('Author display name'),
+      authorEmail: z.string().optional().describe('Author email address'),
     },
     wrapHandler('git_commit', args => McpToolsHandler.gitCommit(ctx, args))
   );
@@ -268,9 +284,190 @@ export function createConfiguredMcpServer(ctx: McpContext): McpServer {
 
   server.tool(
     'git_history',
-    'Returns recent git commit history',
-    { projectId: z.string().optional(), maxCount: z.number().optional() },
+    'Returns structured commit history with commit SHA, message, author name, timestamp, and parent commits.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      maxCount: z.number().int().min(1).optional().describe('Maximum number of commits to retrieve (default 25)'),
+      branch: z.string().optional().describe('Branch name to inspect history of'),
+      fromRevision: z.string().optional().describe('Starting revision (commit SHA or ref)'),
+      toRevision: z.string().optional().describe('Ending revision (commit SHA or ref)'),
+      filePath: z.string().optional().describe('Optional specific file path to filter commits by'),
+    },
     wrapHandler('git_history', args => McpToolsHandler.gitHistory(ctx, args))
+  );
+
+  server.tool(
+    'git_sync',
+    'Unified Smart Git Sync engine: verifies working tree, fetches updates, classifies divergence, reconciles via safe fast-forward, merge, or rebase, and pushes to remote with verification.',
+    {
+      projectId: z.string().optional().describe('Project identifier. Defaults to active workspace.'),
+      remoteName: z.string().optional().describe('Remote name to synchronize with (defaults to "origin")'),
+      branch: z.string().optional().describe('Target branch to synchronize. Defaults to current branch or upstream.'),
+      strategy: z.enum(['safe', 'ff-only', 'merge', 'rebase']).optional().describe('Reconciliation strategy: safe, ff-only, merge, or rebase (default safe)'),
+      push: z.boolean().optional().describe('Whether to push local commits to remote after successful reconciliation (default false)'),
+      commitMessage: z.string().optional().describe('Optional commit message to safely auto-commit uncommitted changes before sync'),
+      force: z.boolean().optional().describe('Explicit opt-in required for force-pushing (warning: may overwrite remote history)'),
+      dryRun: z.boolean().optional().describe('Simulate the synchronization process without modifying working tree or pushing (default false)'),
+      token: z.string().optional().describe('Optional GitHub Personal Access Token if not configured in environment'),
+    },
+    wrapHandler('git_sync', args => McpToolsHandler.gitSync(ctx, args))
+  );
+
+  server.tool(
+    'clone_repository',
+    'Clones a remote Git repository (public or private with token) into a local workspace and synchronizes with storage adapter.',
+    {
+      repositoryUrl: z.string().describe('Remote repository URL (HTTPS, SSH, or git://)'),
+      projectId: z.string().optional().describe('Target project ID to associate cloned workspace with'),
+      projectName: z.string().optional().describe('Display name for cloned project if creating a new workspace'),
+      branch: z.string().optional().describe('Specific branch or tag to checkout on clone'),
+      depth: z.number().int().min(1).optional().describe('Create a shallow clone with history truncated to the specified depth'),
+      destinationPath: z.string().optional().describe('Custom destination path within storage sandbox'),
+      token: z.string().optional().describe('GitHub token for authenticated private repository access'),
+    },
+    wrapHandler('clone_repository', args => McpToolsHandler.cloneRepository(ctx, args))
+  );
+
+  server.tool(
+    'git_fetch',
+    'Fetches branches and tags from a remote repository without integrating them into current working branches.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      remoteName: z.string().optional().describe('Remote name to fetch from (default "origin")'),
+      branch: z.string().optional().describe('Optional specific branch ref to fetch'),
+      token: z.string().optional().describe('GitHub token for authenticated access'),
+    },
+    wrapHandler('git_fetch', args => McpToolsHandler.gitFetch(ctx, args))
+  );
+
+  server.tool(
+    'git_pull',
+    'Fetches from and integrates with another repository or a local branch safely without discarding local changes.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      remoteName: z.string().optional().describe('Remote name (default "origin")'),
+      branch: z.string().optional().describe('Branch to pull from'),
+      token: z.string().optional().describe('GitHub token for authenticated access'),
+      strategy: z.enum(['safe', 'ff-only', 'merge']).optional().describe('Integration strategy (default "safe")'),
+    },
+    wrapHandler('git_pull', args => McpToolsHandler.gitPull(ctx, args))
+  );
+
+  server.tool(
+    'git_branch_list',
+    'Lists local and optionally remote-tracking branches with current checkout indicators and commit hashes.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      includeRemote: z.boolean().optional().describe('Include remote-tracking branches (default true)'),
+    },
+    wrapHandler('git_branch_list', args => McpToolsHandler.branchList(ctx, args))
+  );
+
+  server.tool(
+    'git_branch_create',
+    'Creates a new branch at the specified starting revision and optionally checks it out.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      branchName: z.string().describe('Name of the new branch to create'),
+      startPoint: z.string().optional().describe('Starting commit SHA or ref for the new branch'),
+      checkout: z.boolean().optional().describe('Automatically switch to the new branch upon creation (default true)'),
+    },
+    wrapHandler('git_branch_create', args => McpToolsHandler.branchCreate(ctx, args))
+  );
+
+  server.tool(
+    'git_branch_switch',
+    'Switches to a different branch, safely refusing if uncommitted modifications would be overwritten.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      branchName: z.string().describe('Branch name to checkout'),
+      create: z.boolean().optional().describe('Create branch if it does not already exist'),
+    },
+    wrapHandler('git_branch_switch', args => McpToolsHandler.branchSwitch(ctx, args))
+  );
+
+  server.tool(
+    'git_branch_delete',
+    'Deletes a local branch with safety checks protecting currently checked-out branch.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      branchName: z.string().describe('Branch name to delete (cannot delete currently checked out branch)'),
+      force: z.boolean().optional().describe('Force delete branch even if unmerged (default false)'),
+    },
+    wrapHandler('git_branch_delete', args => McpToolsHandler.branchDelete(ctx, args))
+  );
+
+  server.tool(
+    'git_set_upstream',
+    'Configures tracking information for a local branch to an upstream remote repository branch.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      branch: z.string().optional().describe('Local branch name (defaults to current branch)'),
+      remote: z.string().optional().describe('Remote name (default "origin")'),
+      upstreamBranch: z.string().optional().describe('Remote branch name (defaults to local branch name)'),
+    },
+    wrapHandler('git_set_upstream', args => McpToolsHandler.setUpstream(ctx, args))
+  );
+
+  server.tool(
+    'github_repo_info',
+    'Retrieves repository metadata from GitHub API including default branch, permissions, visibility, and clone URLs.',
+    {
+      owner: z.string().describe('GitHub repository owner (user or organization)'),
+      repo: z.string().describe('GitHub repository name'),
+      token: z.string().optional().describe('GitHub token for authentication'),
+    },
+    wrapHandler('github_repo_info', args => McpToolsHandler.githubRepoInfo(ctx, args))
+  );
+
+  server.tool(
+    'github_list_pull_requests',
+    'Lists GitHub pull requests for a repository with status, branch references, and author details.',
+    {
+      owner: z.string().describe('GitHub repository owner'),
+      repo: z.string().describe('GitHub repository name'),
+      state: z.enum(['open', 'closed', 'all']).optional().describe('Pull request state filter (default "open")'),
+      token: z.string().optional().describe('GitHub token for authentication'),
+    },
+    wrapHandler('github_list_pull_requests', args => McpToolsHandler.githubListPullRequests(ctx, args))
+  );
+
+  server.tool(
+    'github_create_pull_request',
+    'Creates a new pull request on GitHub between head branch and target base branch.',
+    {
+      owner: z.string().describe('GitHub repository owner'),
+      repo: z.string().describe('GitHub repository name'),
+      title: z.string().describe('Pull request title'),
+      head: z.string().describe('Branch containing your changes'),
+      base: z.string().describe('Target branch to merge changes into (e.g. main)'),
+      body: z.string().optional().describe('Pull request description/body markdown'),
+      draft: z.boolean().optional().describe('Create as draft pull request'),
+      token: z.string().optional().describe('GitHub token for authentication'),
+    },
+    wrapHandler('github_create_pull_request', args => McpToolsHandler.githubCreatePullRequest(ctx, args))
+  );
+
+  server.tool(
+    'github_compare',
+    'Compares two commits or branches on GitHub and returns ahead/behind counts and changed files.',
+    {
+      owner: z.string().describe('GitHub repository owner'),
+      repo: z.string().describe('GitHub repository name'),
+      base: z.string().describe('Base branch or commit SHA to compare from'),
+      head: z.string().describe('Head branch or commit SHA to compare to'),
+      token: z.string().optional().describe('GitHub token for authentication'),
+    },
+    wrapHandler('github_compare', args => McpToolsHandler.githubCompare(ctx, args))
+  );
+
+  server.tool(
+    'github_check_auth',
+    'Tests GitHub authentication credentials and reports user identity, OAuth scopes, and API rate limits.',
+    {
+      token: z.string().optional().describe('GitHub token to verify claims and scopes for'),
+    },
+    wrapHandler('github_check_auth', args => McpToolsHandler.githubCheckAuth(ctx, args))
   );
 
   // 6. Execution & Testing

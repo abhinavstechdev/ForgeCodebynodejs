@@ -4,7 +4,14 @@ import { PatchEngine } from '../services/patchEngine.js';
 import { computeSha256 } from '../utils/crypto.js';
 import { normalizeRelativePath } from '../utils/sanitizePath.js';
 import { GitService } from '../services/gitService.js';
+import { GitHubService } from '../services/githubService.js';
 import { ExecutionService } from '../services/executionService.js';
+import {
+  GitDiffOptions,
+  GitHistoryOptions,
+  GitSyncOptions,
+  GitCloneOptions,
+} from '../../shared/types.js';
 
 export interface McpContext {
   userId: string;
@@ -700,7 +707,7 @@ export class McpToolsHandler {
   }
 
   // -------------------------------------------------------------
-  // 5. Version Control
+  // 5. Version Control & GitHub Integration
   // -------------------------------------------------------------
 
   static async gitStatus(ctx: McpContext, args: { projectId?: string }) {
@@ -709,16 +716,21 @@ export class McpToolsHandler {
     return await GitService.getStatus(projectId);
   }
 
-  static async gitDiff(ctx: McpContext, args: { projectId?: string; staged?: boolean }) {
+  static async gitDiff(ctx: McpContext, args: GitDiffOptions) {
     this.checkScope(ctx, 'git:read');
     const projectId = await this.resolveProjectId(ctx, args.projectId);
-    return await GitService.getDiff(projectId, args.staged);
+    return await GitService.getDiff(projectId, args);
   }
 
   static async gitCommit(ctx: McpContext, args: { projectId?: string; message: string; authorName?: string; authorEmail?: string }) {
     this.checkAnyScope(ctx, 'git:write', 'git:commit');
     const projectId = await this.resolveProjectId(ctx, args.projectId);
-    return await GitService.commit(projectId, args.message, args.authorName, args.authorEmail);
+    return await GitService.commit(
+      projectId,
+      args.message,
+      args.authorName || ctx.userName || undefined,
+      args.authorEmail || ctx.userEmail || undefined
+    );
   }
 
   static async gitPush(
@@ -740,17 +752,125 @@ export class McpToolsHandler {
       token: args.token,
       branch: args.branch,
       commitMessage: args.commitMessage,
-      authorName: ctx.userEmail || undefined,
+      authorName: ctx.userName || ctx.userEmail || undefined,
       authorEmail: ctx.userEmail || undefined,
       force: args.force,
       remoteName: args.remoteName,
     });
   }
 
-  static async gitHistory(ctx: McpContext, args: { projectId?: string; maxCount?: number }) {
+  static async gitHistory(ctx: McpContext, args: GitHistoryOptions) {
     this.checkScope(ctx, 'git:read');
     const projectId = await this.resolveProjectId(ctx, args.projectId);
-    return await GitService.getHistory(projectId, args.maxCount);
+    return await GitService.getHistory(projectId, args);
+  }
+
+  static async gitSync(ctx: McpContext, args: GitSyncOptions) {
+    this.checkAnyScope(ctx, 'git:write', 'git:commit');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.sync(projectId, args);
+  }
+
+  static async cloneRepository(ctx: McpContext, args: GitCloneOptions) {
+    this.checkScope(ctx, 'git:write');
+    let targetProjectId = args.projectId;
+    if (!targetProjectId && ctx.defaultProjectId) {
+      targetProjectId = ctx.defaultProjectId;
+    }
+    return await GitService.clone({
+      ...args,
+      projectId: targetProjectId,
+    });
+  }
+
+  static async gitFetch(ctx: McpContext, args: { projectId?: string; remoteName?: string; branch?: string; token?: string }) {
+    this.checkScope(ctx, 'git:read');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.fetch(projectId, args);
+  }
+
+  static async gitPull(
+    ctx: McpContext,
+    args: { projectId?: string; remoteName?: string; branch?: string; token?: string; strategy?: 'safe' | 'ff-only' | 'merge' }
+  ) {
+    this.checkScope(ctx, 'git:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.pull(projectId, args);
+  }
+
+  static async branchList(ctx: McpContext, args: { projectId?: string; includeRemote?: boolean }) {
+    this.checkScope(ctx, 'git:read');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.branchList(projectId, args.includeRemote ?? true);
+  }
+
+  static async branchCreate(
+    ctx: McpContext,
+    args: { projectId?: string; branchName: string; startPoint?: string; checkout?: boolean }
+  ) {
+    this.checkScope(ctx, 'git:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.branchCreate(projectId, args.branchName, args.startPoint, args.checkout ?? true);
+  }
+
+  static async branchSwitch(ctx: McpContext, args: { projectId?: string; branchName: string; create?: boolean }) {
+    this.checkScope(ctx, 'git:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.branchSwitch(projectId, args.branchName, args.create ?? false);
+  }
+
+  static async branchDelete(ctx: McpContext, args: { projectId?: string; branchName: string; force?: boolean }) {
+    this.checkScope(ctx, 'git:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.branchDelete(projectId, args.branchName, args.force ?? false);
+  }
+
+  static async setUpstream(
+    ctx: McpContext,
+    args: { projectId?: string; branch?: string; remote?: string; upstreamBranch?: string }
+  ) {
+    this.checkScope(ctx, 'git:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.setUpstream(projectId, args.branch, args.remote, args.upstreamBranch);
+  }
+
+  static async githubRepoInfo(ctx: McpContext, args: { owner: string; repo: string; token?: string }) {
+    this.checkScope(ctx, 'git:read');
+    return await GitHubService.getRepo(args.owner, args.repo, args.token);
+  }
+
+  static async githubListPullRequests(
+    ctx: McpContext,
+    args: { owner: string; repo: string; state?: 'open' | 'closed' | 'all'; token?: string }
+  ) {
+    this.checkScope(ctx, 'git:read');
+    return await GitHubService.listPullRequests(args.owner, args.repo, args.state, args.token);
+  }
+
+  static async githubCreatePullRequest(
+    ctx: McpContext,
+    args: { owner: string; repo: string; title: string; head: string; base: string; body?: string; draft?: boolean; token?: string }
+  ) {
+    this.checkScope(ctx, 'git:write');
+    return await GitHubService.createPullRequest(
+      args.owner,
+      args.repo,
+      { title: args.title, head: args.head, base: args.base, body: args.body },
+      args.token
+    );
+  }
+
+  static async githubCompare(
+    ctx: McpContext,
+    args: { owner: string; repo: string; base: string; head: string; token?: string }
+  ) {
+    this.checkScope(ctx, 'git:read');
+    return await GitHubService.compareCommits(args.owner, args.repo, args.base, args.head, args.token);
+  }
+
+  static async githubCheckAuth(ctx: McpContext, args: { token?: string }) {
+    this.checkScope(ctx, 'git:read');
+    return await GitHubService.checkAuth(args.token);
   }
 
   // -------------------------------------------------------------

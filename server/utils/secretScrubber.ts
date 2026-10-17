@@ -6,7 +6,7 @@
 const SECRET_PATTERNS = [
   /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI keys
   /mcp_live_[a-zA-Z0-9_-]{20,}/g, // ForgeCode MCP keys
-  /ghp_[a-zA-Z0-9]{36}/g, // GitHub classic PATs
+  /ghp_[a-zA-Z0-9_]{20,}/g, // GitHub classic PATs
   /github_pat_[a-zA-Z0-9_]{22,}/g, // GitHub fine-grained PATs
   /https?:\/\/[^\s@]+@github\.com/gi, // Credentials in GitHub URLs
   /xox[baprs]-[0-9a-zA-Z]{10,48}/g, // Slack tokens
