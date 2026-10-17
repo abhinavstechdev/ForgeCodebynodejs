@@ -485,6 +485,16 @@ export class OAuthController {
       resource,
     } = req.body;
 
+    let effectiveClientId = client_id;
+    const authHeader = req.get('authorization');
+    if (authHeader && authHeader.startsWith('Basic ')) {
+      try {
+        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+        const [basicId] = decoded.split(':');
+        if (basicId) effectiveClientId = basicId;
+      } catch {}
+    }
+
     if (grant_type !== 'authorization_code') {
       res.status(400).json({ error: 'unsupported_grant_type', error_description: 'Only authorization_code is supported' });
       return;
@@ -539,7 +549,7 @@ export class OAuthController {
     await prisma.mcpToken.create({
       data: {
         tokenHash,
-        name: `ChatGPT OAuth Token (${new Date().toISOString().split('T')[0]})`,
+        name: `${effectiveClientId || 'OAuth'} Token (${new Date().toISOString().split('T')[0]})`,
         userId: user.id,
         scopes: entry.scopes,
       },
@@ -552,7 +562,7 @@ export class OAuthController {
       {
         iss: baseUrl,
         sub: user.id,
-        aud: client_id || 'chatgpt',
+        aud: effectiveClientId || 'gemini',
         email: user.email,
         email_verified: true,
         name: user.name || user.email.split('@')[0],
