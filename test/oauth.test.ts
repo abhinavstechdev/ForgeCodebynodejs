@@ -155,4 +155,25 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     expect(userInfoRes.body.email).toBe('admin@forgecode.ai');
     expect(userInfoRes.body.email_verified).toBe(true);
   });
+
+  it('POST /mcp responds to Streamable HTTP tools/list action discovery with 200 OK and tool inventory', async () => {
+    const res = await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {},
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBeDefined();
+    expect(Array.isArray(res.body.result.tools)).toBe(true);
+    const toolNames = res.body.result.tools.map((t: any) => t.name);
+    expect(toolNames).toContain('list_projects');
+    expect(toolNames).toContain('read_file');
+    expect(toolNames).toContain('propose_patch');
+  });
 });

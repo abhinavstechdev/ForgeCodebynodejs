@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 
 import apiRouter from './routes/api.js';
-import { handleMcpSse, handleMcpMessage } from './mcp/mcpServer.js';
+import { handleMcpSse, handleMcpMessage, handleMcpStreamableHttp } from './mcp/mcpServer.js';
 import { OAuthController } from './controllers/oauthController.js';
 import { setupTerminalWebSocket } from './services/terminalService.js';
 import { prisma, checkDatabaseConnection } from './db/prisma.js';
@@ -18,6 +18,9 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
+// Enable reverse proxy support (Cloudflare / Voroa) for accurate IP and rate-limiting
+app.set('trust proxy', 1);
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -42,6 +45,15 @@ app.use(
 app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+// Gracefully handle malformed JSON bodies without crashing
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.status(400).json({ error: 'Invalid JSON payload' });
+    return;
+  }
+  next(err);
+});
 
 // Rate limiting on sensitive auth routes
 const authLimiter = rateLimit({
@@ -94,6 +106,7 @@ app.get('/healthz', async (req, res) => {
 // Official Model Context Protocol (MCP) Server Endpoint
 // -------------------------------------------------------------
 app.get('/mcp', handleMcpSse);
+app.post('/mcp', handleMcpStreamableHttp);
 app.post('/mcp/messages', handleMcpMessage);
 
 // -------------------------------------------------------------

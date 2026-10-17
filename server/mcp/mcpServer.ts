@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { hashToken } from '../utils/crypto.js';
@@ -397,6 +398,61 @@ export async function handleMcpSse(req: Request, res: Response) {
   await mcpServer.connect(transport);
 }
 
+/**
+ * Express Route Handler for Streamable HTTP Transport (POST /mcp)
+ * Handles ChatGPT / Codex tool discovery and JSON-RPC message dispatching
+ */
+export async function handleMcpStreamableHttp(req: Request, res: Response) {
+  let ctx = await authenticateMcpRequest(req);
+  const authHeader = req.headers.authorization;
+
+  // If an invalid bearer token was supplied
+  if (authHeader && authHeader.startsWith('Bearer ') && !ctx) {
+    const baseUrl = getBaseUrl(req);
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+    );
+    res.status(401).json({ error: 'Unauthorized: Invalid or expired MCP bearer token' });
+    return;
+  }
+
+  // If client explicitly requests auth challenge
+  if (!ctx && (req.query.auth === 'required' || req.headers['x-mcp-require-auth'] === 'true')) {
+    const baseUrl = getBaseUrl(req);
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+    );
+    res.status(401).json({ error: 'Unauthorized: MCP bearer token required' });
+    return;
+  }
+
+  // Support No-Auth mode if no token provided
+  if (!ctx) {
+    ctx = await getAnonymousMcpContext();
+  }
+
+  // Normalize Accept header so StreamableHTTP never rejects with 406 Not Acceptable
+  if (!req.headers.accept || req.headers.accept === '*/*') {
+    req.headers.accept = 'application/json, text/event-stream';
+  } else if (!req.headers.accept.includes('text/event-stream')) {
+    req.headers.accept = `${req.headers.accept}, text/event-stream`;
+  }
+
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+
+  const mcpServer = createConfiguredMcpServer(ctx);
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+
+  await mcpServer.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+
 export async function handleMcpMessage(req: Request, res: Response) {
   const sessionId = req.query.sessionId as string;
   if (!sessionId) {
@@ -410,5 +466,5 @@ export async function handleMcpMessage(req: Request, res: Response) {
     return;
   }
 
-  await transport.handlePostMessage(req, res);
+  await transport.handlePostMessage(req, res, req.body);
 }
