@@ -321,12 +321,24 @@ export async function authenticateMcpRequest(req: Request): Promise<McpContext |
   };
 }
 
+function getBaseUrl(req: Request): string {
+  const forwardedProto = req.get('x-forwarded-proto');
+  const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
+  const host = req.get('host') || 'forgecode-ai.getvoroa.com';
+  return `${protocol}://${host}`;
+}
+
 /**
  * Express Route Handlers for MCP SSE Transport
  */
 export async function handleMcpSse(req: Request, res: Response) {
   const ctx = await authenticateMcpRequest(req);
   if (!ctx) {
+    const baseUrl = getBaseUrl(req);
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+    );
     res.status(401).json({ error: 'Unauthorized: Invalid or missing MCP bearer token' });
     return;
   }

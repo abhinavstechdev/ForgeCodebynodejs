@@ -1,0 +1,41 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "forgecode-ai",
+  "version": "1.0.0",
+  "description": "Full-stack cloud AI Web IDE with line-by-line surgical patch engine and MCP server",
+  "author": {
+    "name": "ForgeCode Team",
+    "email": "dev@forgecode.ai",
+    "url": "https://forgecode-ai.getvoroa.com"
+  },
+  "homepage": "https://forgecode-ai.getvoroa.com",
+  "repository": "https://github.com/abhinavstechdev/ForgeCodebynodejs",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "ForgeCode AI",
+        "shortDescription": "Cloud AI Web IDE & Patch Tool",
+        "longDescription": "ForgeCode AI connects ChatGPT and Codex to your browser-based cloud Web IDE. Inspect project trees, read code files, propose line-by-line Myers diff patches with rollback protection, and manage project workflows effortlessly.",
+        "developerName": "ForgeCode Team",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Browse files and project tree",
+          "Read code files and line ranges",
+          "Propose surgical diff patches",
+          "Manage Git branches and commits",
+          "Execute terminal commands"
+        ],
+        "websiteURL": "https://forgecode-ai.getvoroa.com",
+        "privacyPolicyURL": "https://forgecode-ai.getvoroa.com/privacy",
+        "termsOfServiceURL": "https://forgecode-ai.getvoroa.com/terms",
+        "defaultPrompt": [
+          "List all projects in my ForgeCode workspace",
+          "Inspect src/index.ts in my active project",
+          "Propose surgical patch to add health endpoint"
+        ],
+        "brandColor": "#3B82F6"
+      }
+    }
+  }
+}

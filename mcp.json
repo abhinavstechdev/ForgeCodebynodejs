@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "forgecode-ai": {
+      "type": "streamable-http",
+      "url": "https://forgecode-ai.getvoroa.com/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "provided",
+              "clientId": "chatgpt-forgecode-client",
+              "tokenEndpointAuthMethod": "none"
+            },
+            "authorizationUrl": "https://forgecode-ai.getvoroa.com/oauth/authorize",
+            "tokenUrl": "https://forgecode-ai.getvoroa.com/oauth/token",
+            "baseScopes": [
+              "files:read",
+              "files:write",
+              "terminal:execute",
+              "git:commit",
+              "ai:propose",
+              "ai:apply"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

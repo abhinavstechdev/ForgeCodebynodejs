@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws';
 
 import apiRouter from './routes/api.js';
 import { handleMcpSse, handleMcpMessage } from './mcp/mcpServer.js';
+import { OAuthController } from './controllers/oauthController.js';
 import { setupTerminalWebSocket } from './services/terminalService.js';
 import { prisma, checkDatabaseConnection } from './db/prisma.js';
 
@@ -52,6 +53,20 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // -------------------------------------------------------------
+// OpenAI & ChatGPT OAuth 2.1 & Verification Endpoints
+// -------------------------------------------------------------
+app.get('/.well-known/openai-apps-challenge', OAuthController.getOpenAiChallenge);
+app.get('/.well-known/oauth-protected-resource', OAuthController.getProtectedResourceMetadata);
+app.get('/.well-known/oauth-authorization-server', OAuthController.getAuthorizationServerMetadata);
+app.get('/.well-known/openid-configuration', OAuthController.getAuthorizationServerMetadata);
+
+app.get('/oauth/authorize', OAuthController.renderAuthorizePage);
+app.post('/oauth/authorize', OAuthController.handleAuthorizeSubmit);
+app.post('/oauth/token', OAuthController.exchangeToken);
+app.get('/oauth/userinfo', OAuthController.getUserInfo);
+app.get('/oauth/jwks.json', OAuthController.getJwks);
+
+// -------------------------------------------------------------
 // Healthcheck Route (Voroa Web Service & Deployment Target)
 // -------------------------------------------------------------
 app.get('/healthz', async (req, res) => {
@@ -92,7 +107,13 @@ const clientDistPath = path.resolve(process.cwd(), 'dist/client');
 app.use(express.static(clientDistPath));
 
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/mcp') || req.path.startsWith('/healthz')) {
+  if (
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/mcp') ||
+    req.path.startsWith('/healthz') ||
+    req.path.startsWith('/oauth') ||
+    req.path.startsWith('/.well-known')
+  ) {
     return next();
   }
   res.sendFile(path.join(clientDistPath, 'index.html'), err => {
@@ -123,13 +144,15 @@ setupTerminalWebSocket(wss);
 // -------------------------------------------------------------
 // Start Server & Graceful Shutdown
 // -------------------------------------------------------------
-server.listen(PORT, HOST, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 ForgeCode AI running on http://${HOST}:${PORT}`);
-  console.log(`🩺 Health check route: http://${HOST}:${PORT}/healthz`);
-  console.log(`🤖 MCP Server route:   http://${HOST}:${PORT}/mcp`);
-  console.log(`=======================================================`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, HOST, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 ForgeCode AI running on http://${HOST}:${PORT}`);
+    console.log(`🩺 Health check route: http://${HOST}:${PORT}/healthz`);
+    console.log(`🤖 MCP Server route:   http://${HOST}:${PORT}/mcp`);
+    console.log(`=======================================================`);
+  });
+}
 
 const gracefulShutdown = async (signal: string) => {
   console.log(`\nReceived ${signal}. Shutting down gracefully...`);
