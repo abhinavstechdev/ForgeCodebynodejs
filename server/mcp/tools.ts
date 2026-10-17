@@ -4,6 +4,7 @@ import { PatchEngine } from '../services/patchEngine.js';
 import { computeSha256 } from '../utils/crypto.js';
 import { normalizeRelativePath } from '../utils/sanitizePath.js';
 import { GitService } from '../services/gitService.js';
+import { GitLockManager } from '../services/gitLockManager.js';
 import { GitHubService } from '../services/githubService.js';
 import { ExecutionService } from '../services/executionService.js';
 import {
@@ -757,6 +758,20 @@ export class McpToolsHandler {
       force: args.force,
       remoteName: args.remoteName,
     });
+  }
+
+  static async gitUnlock(ctx: McpContext, args: { projectId?: string }) {
+    this.checkAnyScope(ctx, 'git:write', 'git:commit', 'files:write');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    const wasLocked = GitLockManager.forceUnlock(projectId);
+    return {
+      success: true,
+      projectId,
+      wasLocked,
+      message: wasLocked
+        ? `Successfully cleared lock on repository for project '${projectId}'`
+        : `Repository for project '${projectId}' was not locked`,
+    };
   }
 
   static async gitHistory(ctx: McpContext, args: GitHistoryOptions) {

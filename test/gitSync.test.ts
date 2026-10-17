@@ -305,6 +305,33 @@ describe('Smart Git Sync & Complete Git Access Test Suite', { timeout: 30000 }, 
       });
       expect(nextOp).toBe('lock-released-successfully');
     });
+
+    it('supports re-entrant locks within the same asynchronous execution chain', async () => {
+      const nestedResult = await GitLockManager.withLock(testProjectId, 'outerPush', async () => {
+        // Outer lock is held as 'outerPush'
+        const commitResult = await GitLockManager.withLock(testProjectId, 'innerCommit', async () => {
+          // Inner lock call succeeds because it is in the same async context
+          const stageResult = await GitLockManager.withLock(testProjectId, 'innerStage', async () => {
+            return 'staged';
+          });
+          return `committed-${stageResult}`;
+        });
+        return `pushed-${commitResult}`;
+      });
+
+      expect(nestedResult).toBe('pushed-committed-staged');
+      expect(GitLockManager.isLocked(testProjectId)).toBe(false);
+    });
+
+    it('manually unlocks repository via forceUnlock', async () => {
+      // Artificially simulate an active lock
+      await GitLockManager.withLock(testProjectId, 'testOp', async () => {
+        expect(GitLockManager.isLocked(testProjectId)).toBe(true);
+        const unlocked = GitLockManager.forceUnlock(testProjectId);
+        expect(unlocked).toBe(true);
+        expect(GitLockManager.isLocked(testProjectId)).toBe(false);
+      });
+    });
   });
 
   // -------------------------------------------------------------

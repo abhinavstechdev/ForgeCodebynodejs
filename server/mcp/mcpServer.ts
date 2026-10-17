@@ -283,6 +283,15 @@ export function createConfiguredMcpServer(ctx: McpContext): McpServer {
   );
 
   server.tool(
+    'git_unlock',
+    'Manually releases any active or stale concurrency lock on the project Git repository',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+    },
+    wrapHandler('git_unlock', args => McpToolsHandler.gitUnlock(ctx, args))
+  );
+
+  server.tool(
     'git_history',
     'Returns structured commit history with commit SHA, message, author name, timestamp, and parent commits.',
     {
