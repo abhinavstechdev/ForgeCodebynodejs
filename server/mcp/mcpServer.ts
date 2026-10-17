@@ -585,6 +585,13 @@ export async function getAnonymousMcpContext(): Promise<McpContext> {
  * Express Route Handlers for MCP SSE Transport
  */
 export async function handleMcpSse(req: Request, res: Response) {
+  // Respond immediately to HEAD reachability probes
+  if (req.method === 'HEAD') {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).end();
+    return;
+  }
+
   let ctx = await authenticateMcpRequest(req);
 
   // If an invalid bearer token was supplied
@@ -607,6 +614,23 @@ export async function handleMcpSse(req: Request, res: Response) {
       `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write terminal:execute git:read git:write git:commit ai:propose ai:apply"`
     );
     res.status(401).json({ error: 'Unauthorized: MCP bearer token required' });
+    return;
+  }
+
+  // If client explicitly requested JSON metadata (not an SSE connection)
+  const acceptHeader = (req.headers.accept || '').toLowerCase();
+  if (acceptHeader.includes('application/json') && !acceptHeader.includes('text/event-stream')) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({
+      name: 'ForgeCode AI IDE MCP Server',
+      version: '1.0.0',
+      status: 'ready',
+      endpoint: '/mcp',
+      transports: ['streamable-http', 'sse'],
+      capabilities: {
+        tools: { listChanged: true },
+      },
+    });
     return;
   }
 
@@ -636,6 +660,26 @@ export async function handleMcpSse(req: Request, res: Response) {
  * Handles ChatGPT / Codex tool discovery and JSON-RPC message dispatching
  */
 export async function handleMcpStreamableHttp(req: Request, res: Response) {
+  // Respond immediately to HEAD reachability probes
+  if (req.method === 'HEAD') {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).end();
+    return;
+  }
+
+  // Handle empty body probe / connectivity ping
+  if (!req.body || (typeof req.body === 'object' && Object.keys(req.body).length === 0)) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({
+      name: 'ForgeCode AI IDE MCP Server',
+      version: '1.0.0',
+      status: 'ready',
+      transport: 'streamable-http',
+      endpoint: '/mcp',
+    });
+    return;
+  }
+
   let ctx = await authenticateMcpRequest(req);
   const authHeader = req.headers.authorization;
 

@@ -32,6 +32,8 @@ app.use(
   helmet({
     contentSecurityPolicy: false, // disabled for Monaco Editor web workers and inline styles
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: false,
   })
 );
 
@@ -39,8 +41,38 @@ app.use(
   cors({
     origin: true,
     credentials: true,
+    exposedHeaders: [
+      'WWW-Authenticate',
+      'Mcp-Session-Id',
+      'Content-Type',
+      'Authorization',
+      'X-Accel-Buffering',
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'Mcp-Session-Id',
+      'x-mcp-require-auth',
+      'Cache-Control',
+    ],
   })
 );
+
+// Route logger for MCP and OAuth endpoints
+app.use((req, res, next) => {
+  if (
+    req.path.startsWith('/mcp') ||
+    req.path.startsWith('/sse') ||
+    req.path.startsWith('/oauth') ||
+    req.path.startsWith('/.well-known')
+  ) {
+    console.log(`[MCP-HTTP] ${req.method} ${req.originalUrl} - Origin: ${req.get('origin') || '-'} - Accept: ${req.get('accept') || '-'}`);
+  }
+  next();
+});
 
 app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
@@ -108,6 +140,11 @@ app.get('/healthz', async (req, res) => {
 app.get('/mcp', handleMcpSse);
 app.post('/mcp', handleMcpStreamableHttp);
 app.post('/mcp/messages', handleMcpMessage);
+
+// Aliases for clients expecting /sse
+app.get('/sse', handleMcpSse);
+app.post('/sse', handleMcpStreamableHttp);
+app.post('/sse/messages', handleMcpMessage);
 
 // -------------------------------------------------------------
 // REST API Routes
