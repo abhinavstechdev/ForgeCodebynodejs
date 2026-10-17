@@ -381,6 +381,8 @@ export async function handleMcpSse(req: Request, res: Response) {
     ctx = await getAnonymousMcpContext();
   }
 
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   const transport = new SSEServerTransport('/mcp/messages', res);
   const mcpServer = createConfiguredMcpServer(ctx);
 
