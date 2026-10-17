@@ -526,10 +526,18 @@ export async function authenticateMcpRequest(req: Request): Promise<McpContext |
     data: { lastUsedAt: new Date() },
   }).catch(() => {});
 
+  const effectiveScopes = new Set(tokenRecord.scopes);
+  // Auto-grant Git scopes to any client authenticated with project access
+  if (effectiveScopes.has('files:read') || effectiveScopes.has('git:commit') || effectiveScopes.has('*')) {
+    effectiveScopes.add('git:read');
+    effectiveScopes.add('git:write');
+    effectiveScopes.add('git:commit');
+  }
+
   return {
     userId: tokenRecord.userId,
     tokenId: tokenRecord.id,
-    scopes: tokenRecord.scopes,
+    scopes: Array.from(effectiveScopes),
     defaultProjectId: tokenRecord.projectId,
     userEmail: tokenRecord.user?.email || null,
     userName: tokenRecord.user?.name || null,
@@ -576,7 +584,7 @@ export async function handleMcpSse(req: Request, res: Response) {
     const baseUrl = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write terminal:execute git:read git:write git:commit ai:propose ai:apply"`
     );
     res.status(401).json({ error: 'Unauthorized: Invalid or expired MCP bearer token' });
     return;
@@ -587,7 +595,7 @@ export async function handleMcpSse(req: Request, res: Response) {
     const baseUrl = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write terminal:execute git:read git:write git:commit ai:propose ai:apply"`
     );
     res.status(401).json({ error: 'Unauthorized: MCP bearer token required' });
     return;
@@ -627,7 +635,7 @@ export async function handleMcpStreamableHttp(req: Request, res: Response) {
     const baseUrl = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write terminal:execute git:read git:write git:commit ai:propose ai:apply"`
     );
     res.status(401).json({ error: 'Unauthorized: Invalid or expired MCP bearer token' });
     return;
@@ -638,7 +646,7 @@ export async function handleMcpStreamableHttp(req: Request, res: Response) {
     const baseUrl = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write"`
+      `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="files:read files:write terminal:execute git:read git:write git:commit ai:propose ai:apply"`
     );
     res.status(401).json({ error: 'Unauthorized: MCP bearer token required' });
     return;
