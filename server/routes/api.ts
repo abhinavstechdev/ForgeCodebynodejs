@@ -70,6 +70,9 @@ router.get('/projects/:projectId/git/diff', requireAuth, requireProjectAccess('v
 router.post('/projects/:projectId/git/stage', requireAuth, requireProjectAccess('editor'), GitController.stage);
 router.post('/projects/:projectId/git/unstage', requireAuth, requireProjectAccess('editor'), GitController.unstage);
 router.post('/projects/:projectId/git/commit', requireAuth, requireProjectAccess('editor'), GitController.commit);
+router.post('/projects/:projectId/git/push', requireAuth, requireProjectAccess('editor'), GitController.push);
+router.get('/projects/:projectId/git/remotes', requireAuth, requireProjectAccess('viewer'), GitController.getRemotes);
+router.post('/projects/:projectId/git/remotes', requireAuth, requireProjectAccess('editor'), GitController.setRemote);
 router.get('/projects/:projectId/git/history', requireAuth, requireProjectAccess('viewer'), GitController.getHistory);
 
 // -------------------------------------------------------------

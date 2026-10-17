@@ -210,6 +210,26 @@ export interface GitCommitItem {
   date: string;
 }
 
+export interface GitPushOptions {
+  remoteUrl?: string;
+  token?: string;
+  branch?: string;
+  commitMessage?: string;
+  authorName?: string;
+  authorEmail?: string;
+  force?: boolean;
+  remoteName?: string;
+}
+
+export interface GitPushResult {
+  success: boolean;
+  branch: string;
+  remote: string;
+  pushed: boolean;
+  commitHash?: string;
+  message: string;
+}
+
 // -------------------------------------------------------------
 // Execution & Diagnostics Types
 // -------------------------------------------------------------

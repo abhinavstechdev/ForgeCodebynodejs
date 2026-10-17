@@ -66,4 +66,16 @@ describe('ForgeCode AI System & Security Test Suite', () => {
     const res = await request(app).get('/api/projects');
     expect(res.status).toBe(401);
   });
+
+  it('scrubs GitHub classic and fine-grained PATs and embedded credentials in URLs', () => {
+    const logWithClassicPat = 'Failed to push to https://ghp_111122223333444455556666777788889999@github.com/owner/repo.git';
+    const scrubbedClassic = scrubSecrets(logWithClassicPat);
+    expect(scrubbedClassic).not.toContain('ghp_111122223333444455556666777788889999');
+    expect(scrubbedClassic).toContain('[REDACTED_SECRET]');
+
+    const logWithFineGrainedPat = 'Using token github_pat_11AAAAAA22BBBBBB33CCCCCC_44DDDDDD55EEEEEE66';
+    const scrubbedFineGrained = scrubSecrets(logWithFineGrainedPat);
+    expect(scrubbedFineGrained).not.toContain('github_pat_11AAAAAA');
+    expect(scrubbedFineGrained).toContain('[REDACTED_SECRET]');
+  });
 });

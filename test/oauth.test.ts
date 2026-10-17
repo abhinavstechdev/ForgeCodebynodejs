@@ -175,5 +175,7 @@ describe('OAuth 2.1 & OpenAI App Integration Tests', () => {
     expect(toolNames).toContain('list_projects');
     expect(toolNames).toContain('read_file');
     expect(toolNames).toContain('propose_patch');
+    expect(toolNames).toContain('git_commit');
+    expect(toolNames).toContain('git_push');
   });
 });

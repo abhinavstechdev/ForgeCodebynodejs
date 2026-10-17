@@ -11,12 +11,22 @@ export interface McpContext {
   tokenId: string;
   scopes: string[];
   defaultProjectId?: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
 }
 
 export class McpToolsHandler {
   private static checkScope(ctx: McpContext, requiredScope: string) {
     if (!ctx.scopes.includes(requiredScope) && !ctx.scopes.includes('*')) {
       throw new Error(`Permission denied: Missing required MCP scope '${requiredScope}'`);
+    }
+  }
+
+  private static checkAnyScope(ctx: McpContext, ...requiredScopes: string[]) {
+    if (ctx.scopes.includes('*')) return;
+    const hasAny = requiredScopes.some(s => ctx.scopes.includes(s));
+    if (!hasAny) {
+      throw new Error(`Permission denied: Missing required MCP scope. Requires one of: ${requiredScopes.join(', ')}`);
     }
   }
 
@@ -706,9 +716,35 @@ export class McpToolsHandler {
   }
 
   static async gitCommit(ctx: McpContext, args: { projectId?: string; message: string; authorName?: string; authorEmail?: string }) {
-    this.checkScope(ctx, 'git:write');
+    this.checkAnyScope(ctx, 'git:write', 'git:commit');
     const projectId = await this.resolveProjectId(ctx, args.projectId);
     return await GitService.commit(projectId, args.message, args.authorName, args.authorEmail);
+  }
+
+  static async gitPush(
+    ctx: McpContext,
+    args: {
+      projectId?: string;
+      remoteUrl?: string;
+      token?: string;
+      branch?: string;
+      commitMessage?: string;
+      force?: boolean;
+      remoteName?: string;
+    }
+  ) {
+    this.checkAnyScope(ctx, 'git:write', 'git:commit');
+    const projectId = await this.resolveProjectId(ctx, args.projectId);
+    return await GitService.push(projectId, {
+      remoteUrl: args.remoteUrl,
+      token: args.token,
+      branch: args.branch,
+      commitMessage: args.commitMessage,
+      authorName: ctx.userEmail || undefined,
+      authorEmail: ctx.userEmail || undefined,
+      force: args.force,
+      remoteName: args.remoteName,
+    });
   }
 
   static async gitHistory(ctx: McpContext, args: { projectId?: string; maxCount?: number }) {

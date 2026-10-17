@@ -252,6 +252,21 @@ export function createConfiguredMcpServer(ctx: McpContext): McpServer {
   );
 
   server.tool(
+    'git_push',
+    'Pushes local commits directly to a remote GitHub repository. Supports authenticated GitHub Personal Access Tokens (PAT), branch targets, force push, and optional auto-commit.',
+    {
+      projectId: z.string().optional().describe('Project UUID. Defaults to active workspace.'),
+      remoteUrl: z.string().optional().describe('Remote GitHub repository URL, e.g. https://github.com/owner/repo.git'),
+      token: z.string().optional().describe('GitHub Personal Access Token (PAT, e.g. ghp_... or github_pat_...) for authenticated push access'),
+      branch: z.string().optional().describe('Target branch to push to (defaults to current branch or "main")'),
+      commitMessage: z.string().optional().describe('Optional commit message to stage and commit uncommitted changes before pushing'),
+      force: z.boolean().optional().describe('Force push to remote repository (use with caution)'),
+      remoteName: z.string().optional().describe('Remote name in git configuration (defaults to "origin")'),
+    },
+    wrapHandler('git_push', args => McpToolsHandler.gitPush(ctx, args))
+  );
+
+  server.tool(
     'git_history',
     'Returns recent git commit history',
     { projectId: z.string().optional(), maxCount: z.number().optional() },
@@ -319,6 +334,8 @@ export async function authenticateMcpRequest(req: Request): Promise<McpContext |
     tokenId: tokenRecord.id,
     scopes: tokenRecord.scopes,
     defaultProjectId: tokenRecord.projectId,
+    userEmail: tokenRecord.user?.email || null,
+    userName: tokenRecord.user?.name || null,
   };
 }
 
@@ -345,6 +362,8 @@ export async function getAnonymousMcpContext(): Promise<McpContext> {
     tokenId: 'anonymous-session',
     scopes: ['*'],
     defaultProjectId: defaultUser?.projects[0]?.id || null,
+    userEmail: defaultUser?.email || null,
+    userName: defaultUser?.name || null,
   };
 }
 

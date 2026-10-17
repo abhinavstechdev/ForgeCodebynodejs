@@ -48,7 +48,7 @@
 3. **Native Model Context Protocol (MCP) Server**:
    - Implements `@modelcontextprotocol/sdk` Streamable HTTP / Server-Sent Events (SSE) on `/mcp`.
    - Bearer token authentication with granular scopes (`files:read`, `files:write`, `patch:propose`, `patch:apply`, `git:read`, `git:write`, `terminal:execute`).
-   - 27 standard-compliant tools including project tree discovery, regex code search, file operations, diff proposals, and git version control.
+   - 28 standard-compliant tools including project tree discovery, regex code search, file operations, diff proposals, git version control, and direct GitHub push (git_push).
    - 1-click configuration snippet export for **Claude Desktop**, **Cursor**, and **Antigravity**.
 
 4. **Multi-Provider AI Architecture**:

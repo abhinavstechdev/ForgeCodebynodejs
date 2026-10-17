@@ -3,7 +3,13 @@ import path from 'path';
 import fs from 'fs/promises';
 import { prisma } from '../db/prisma.js';
 import { getStorageDriver } from './storage/index.js';
-import { GitStatusSummary, GitCommitItem } from '../../shared/types.js';
+import {
+  GitStatusSummary,
+  GitCommitItem,
+  GitPushOptions,
+  GitPushResult,
+} from '../../shared/types.js';
+import { scrubSecrets } from '../utils/secretScrubber.js';
 
 export class GitService {
   private static async getProjectWorkingDir(projectId: string): Promise<string> {
@@ -135,6 +141,123 @@ export class GitService {
       }));
     } catch {
       return [];
+    }
+  }
+
+  static async getRemotes(projectId: string): Promise<Array<{ name: string; url: string }>> {
+    try {
+      const git = await this.getGitInstance(projectId);
+      const remotes = await git.getRemotes(true);
+      return remotes.map(r => ({
+        name: r.name,
+        url: r.refs.push || r.refs.fetch || '',
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  static async setRemote(projectId: string, url: string, name = 'origin'): Promise<void> {
+    const git = await this.getGitInstance(projectId);
+    const sanitizedUrl = url.trim().replace(/^https?:\/\/[^@]+@/, 'https://');
+    const remotes = await git.getRemotes(true);
+    const existing = remotes.find(r => r.name === name);
+    if (existing) {
+      await git.remote(['set-url', name, sanitizedUrl]);
+    } else {
+      await git.addRemote(name, sanitizedUrl);
+    }
+  }
+
+  static async push(
+    projectId: string,
+    options: GitPushOptions = {}
+  ): Promise<GitPushResult> {
+    const git = await this.getGitInstance(projectId);
+    const remoteName = options.remoteName || 'origin';
+
+    // 1. Commit uncommitted changes if commitMessage was provided
+    if (options.commitMessage) {
+      const status = await git.status();
+      const hasChanges =
+        status.staged.length > 0 ||
+        status.modified.length > 0 ||
+        status.not_added.length > 0 ||
+        status.deleted.length > 0;
+      if (hasChanges) {
+        await this.commit(projectId, options.commitMessage, options.authorName, options.authorEmail);
+      }
+    }
+
+    // 2. Ensure at least one commit exists
+    const logResult = await git.log({ maxCount: 1 }).catch(() => null);
+    if (!logResult || logResult.all.length === 0) {
+      await git.add('.');
+      await git.commit(options.commitMessage || 'Initial commit from ForgeCode AI');
+    }
+
+    // 3. Resolve target branch
+    const status = await git.status();
+    const branch = options.branch || status.current || 'main';
+
+    // 4. Resolve Remote URL & Authentication
+    const remotes = await git.getRemotes(true);
+    const existingRemote = remotes.find(r => r.name === remoteName);
+    const existingUrl = existingRemote?.refs.push || existingRemote?.refs.fetch;
+
+    const targetUrl = options.remoteUrl || existingUrl;
+    if (!targetUrl) {
+      throw new Error(
+        'No remote Git repository URL configured. Provide remoteUrl (e.g. https://github.com/owner/repo.git) or configure an origin remote.'
+      );
+    }
+
+    // Sanitize target URL to ensure no credentials are leakable
+    const sanitizedUrl = targetUrl.trim().replace(/^https?:\/\/[^@]+@/, 'https://');
+    const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+
+    let pushUrl = sanitizedUrl;
+    if (token) {
+      const encodedToken = encodeURIComponent(token.trim());
+      pushUrl = sanitizedUrl.replace(/^https?:\/\//, `https://${encodedToken}@`);
+    }
+
+    // Configure or update remote with authenticated URL
+    if (existingRemote) {
+      await git.remote(['set-url', remoteName, pushUrl]);
+    } else {
+      await git.addRemote(remoteName, pushUrl);
+    }
+
+    try {
+      const pushArgs = ['-u', remoteName, branch];
+      if (options.force) {
+        pushArgs.push('--force');
+      }
+
+      await git.push(pushArgs);
+
+      const log = await git.log({ maxCount: 1 }).catch(() => null);
+      const latestCommitHash = log?.latest?.hash || '';
+
+      return {
+        success: true,
+        branch,
+        remote: sanitizedUrl,
+        pushed: true,
+        commitHash: latestCommitHash,
+        message: `Successfully pushed branch '${branch}' to ${sanitizedUrl}`,
+      };
+    } catch (err: any) {
+      const cleanError = scrubSecrets(err?.message || 'Git push encountered an unknown error');
+      throw new Error(`Git push failed: ${cleanError}`);
+    } finally {
+      // SECURITY: Reset remote origin URL to sanitized URL without sensitive PAT
+      try {
+        await git.remote(['set-url', remoteName, sanitizedUrl]);
+      } catch {
+        // ignore reset errors
+      }
     }
   }
 }

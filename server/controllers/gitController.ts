@@ -90,4 +90,51 @@ export class GitController {
       res.status(500).json({ error: 'Git history failed', details: err.message });
     }
   }
+
+  static async push(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { remoteUrl, token, branch, commitMessage, authorName, authorEmail, force, remoteName } = req.body;
+
+      const result = await GitService.push(projectId, {
+        remoteUrl,
+        token,
+        branch,
+        commitMessage,
+        authorName: authorName || req.user?.name || undefined,
+        authorEmail: authorEmail || req.user?.email || undefined,
+        force,
+        remoteName,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Git push failed', details: err.message });
+    }
+  }
+
+  static async getRemotes(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const remotes = await GitService.getRemotes(projectId);
+      res.json({ remotes });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to retrieve remotes', details: err.message });
+    }
+  }
+
+  static async setRemote(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const { url, name } = req.body;
+      if (!url) {
+        res.status(400).json({ error: 'Remote URL is required' });
+        return;
+      }
+      await GitService.setRemote(projectId, url, name || 'origin');
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to set remote', details: err.message });
+    }
+  }
 }

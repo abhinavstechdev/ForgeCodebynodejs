@@ -7,6 +7,8 @@ import {
   PatchHunk,
   McpTokenInfo,
   GitStatusSummary,
+  GitPushOptions,
+  GitPushResult,
   ChatMessage,
 } from '@shared/types.js';
 
@@ -78,10 +80,14 @@ interface AppState {
 
   // Git
   gitStatus: GitStatusSummary | null;
+  gitRemotes: Array<{ name: string; url: string }>;
   fetchGitStatus: () => Promise<void>;
+  fetchGitRemotes: () => Promise<void>;
+  setGitRemote: (url: string, name?: string) => Promise<boolean>;
   stageFile: (path?: string, all?: boolean) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
   commitGit: (message: string) => Promise<boolean>;
+  pushGit: (options?: { remoteUrl?: string; token?: string; branch?: string; commitMessage?: string; force?: boolean }) => Promise<{ success: boolean; message?: string }>;
 
   // MCP Tokens
   mcpTokens: McpTokenInfo[];
@@ -681,6 +687,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!res.ok) return false;
     await get().fetchGitStatus();
     return true;
+  },
+  gitRemotes: [],
+  fetchGitRemotes: async () => {
+    const project = get().activeProject;
+    if (!project) return;
+    const headers: Record<string, string> = {};
+    if (get().token) headers['Authorization'] = `Bearer ${get().token}`;
+    const res = await fetch(`/api/projects/${project.id}/git/remotes`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      set({ gitRemotes: data.remotes || [] });
+    }
+  },
+  setGitRemote: async (url: string, name = 'origin') => {
+    const project = get().activeProject;
+    if (!project) return false;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (get().token) headers['Authorization'] = `Bearer ${get().token}`;
+    const res = await fetch(`/api/projects/${project.id}/git/remotes`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ url, name }),
+    });
+    if (res.ok) {
+      await get().fetchGitRemotes();
+      return true;
+    }
+    return false;
+  },
+  pushGit: async (options) => {
+    const project = get().activeProject;
+    if (!project) return { success: false, message: 'No active workspace selected' };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (get().token) headers['Authorization'] = `Bearer ${get().token}`;
+    const res = await fetch(`/api/projects/${project.id}/git/push`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(options || {}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, message: data.details || data.error || 'Git push failed' };
+    }
+    await get().fetchGitStatus();
+    await get().fetchGitRemotes();
+    return { success: true, message: data.message };
   },
 
   // MCP Tokens
