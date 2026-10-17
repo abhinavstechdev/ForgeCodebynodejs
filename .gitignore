@@ -34,7 +34,7 @@ lerna-debug.log*
 Thumbs.db
 
 # Workspace scratch / temporary uploads
-uploads/
-temp/
-storage/
+/uploads/
+/temp/
+/storage/
 *.tsbuildinfo

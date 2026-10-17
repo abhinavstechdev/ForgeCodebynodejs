@@ -59,7 +59,7 @@ export class SearchController {
         try {
           const content = await storage.readFile(projectId, f.path);
           const lines = content.split('\n');
-          lines.forEach((line, idx) => {
+          lines.forEach((line: string, idx: number) => {
             const isMatch = regex ? regex.test(line) : line.toLowerCase().includes(query.toLowerCase());
             if (isMatch && matches.length < 100) {
               matches.push({

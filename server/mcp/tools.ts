@@ -163,7 +163,7 @@ export class McpToolsHandler {
       try {
         const text = await storage.readFile(projectId, f.path);
         const lines = text.split('\n');
-        lines.forEach((line, idx) => {
+        lines.forEach((line: string, idx: number) => {
           const hit = queryRegex ? queryRegex.test(line) : line.includes(args.query);
           if (hit) {
             matches.push({
